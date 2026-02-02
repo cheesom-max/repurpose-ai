@@ -1,9 +1,12 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '@clerk/clerk-react';
 import { Header } from '../components/layout/Header';
 import { Footer } from '../components/layout/Footer';
 import { Button } from '../components/ui/Button';
 
 export default function Home() {
+  const navigate = useNavigate();
+  const { isSignedIn } = useAuth();
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -20,14 +23,22 @@ export default function Home() {
               Upload your long-form video and let AI automatically extract highlights, generate shorts, blog posts, and social media content. Save 70% of your content creation time.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link to="/signup">
-                <Button size="lg">Start Free Trial</Button>
-              </Link>
-              <Link to="#demo">
-                <Button size="lg" variant="outline">Watch Demo</Button>
-              </Link>
+              {isSignedIn ? (
+                <Button size="lg" onClick={() => navigate('/dashboard')}>
+                  Go to Dashboard
+                </Button>
+              ) : (
+                <Button size="lg" onClick={() => navigate('/signup')}>
+                  Start Free Trial
+                </Button>
+              )}
+              <Button size="lg" variant="outline" onClick={() => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' })}>
+                Watch Demo
+              </Button>
             </div>
-            <p className="mt-4 text-sm text-gray-500">No credit card required. 3 free videos per month.</p>
+            {!isSignedIn && (
+              <p className="mt-4 text-sm text-gray-500">No credit card required. 3 free videos per month.</p>
+            )}
           </div>
         </section>
 
@@ -73,16 +84,35 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Demo */}
+        <section id="demo" className="py-20">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <h2 className="text-3xl font-bold text-center text-gray-900 mb-8">See It In Action</h2>
+            <div className="aspect-video bg-gray-900 rounded-xl flex items-center justify-center max-w-4xl mx-auto">
+              <div className="text-center text-white">
+                <div className="text-6xl mb-4">▶️</div>
+                <p className="text-xl">Demo Video Coming Soon</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* CTA */}
         <section className="py-20 bg-blue-600">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
-            <h2 className="text-3xl font-bold text-white mb-4">Ready to 10x Your Content Output?</h2>
-            <p className="text-xl text-blue-100 mb-8">Join creators who save hours every week with RepurposeAI.</p>
-            <Link to="/signup">
-              <Button size="lg" className="bg-white text-blue-600 hover:bg-blue-50">
-                Get Started Free
-              </Button>
-            </Link>
+            <h2 className="text-3xl font-bold text-white mb-4">
+              {isSignedIn ? 'Ready to Create More Content?' : 'Ready to 10x Your Content Output?'}
+            </h2>
+            <p className="text-xl text-blue-100 mb-8">
+              {isSignedIn ? 'Start repurposing your videos now.' : 'Join creators who save hours every week with RepurposeAI.'}
+            </p>
+            <Button
+              size="lg"
+              className="bg-white text-blue-600 hover:bg-blue-50"
+              onClick={() => navigate(isSignedIn ? '/dashboard' : '/signup')}
+            >
+              {isSignedIn ? 'Go to Dashboard' : 'Get Started Free'}
+            </Button>
           </div>
         </section>
       </main>

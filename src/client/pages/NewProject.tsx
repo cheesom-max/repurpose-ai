@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../lib/auth';
-import { supabase } from '../lib/supabase';
+import { projectsApi } from '../lib/api';
 import { Header } from '../components/layout/Header';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -9,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 
 export default function NewProject() {
   const navigate = useNavigate();
-  const { user } = useAuth();
 
   const [sourceType, setSourceType] = useState<'youtube' | 'upload'>('youtube');
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -23,7 +21,7 @@ export default function NewProject() {
     setIsLoading(true);
 
     if (sourceType === 'youtube') {
-      const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)/;
+      const youtubeRegex = /^(https?:\/\/)?(www\.|m\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)/;
       if (!youtubeRegex.test(youtubeUrl)) {
         setError('Please enter a valid YouTube URL');
         setIsLoading(false);
@@ -31,25 +29,18 @@ export default function NewProject() {
       }
     }
 
-    const { data, error: insertError } = await supabase
-      .from('projects')
-      .insert({
-        user_id: user?.id,
+    try {
+      const data = await projectsApi.create({
         title: title || 'Untitled Project',
-        source_type: sourceType,
-        source_url: sourceType === 'youtube' ? youtubeUrl : null,
-        status: 'pending',
-      })
-      .select()
-      .single();
+        sourceType,
+        sourceUrl: sourceType === 'youtube' ? youtubeUrl : undefined,
+      });
 
-    if (insertError) {
-      setError(insertError.message);
+      navigate(`/projects/${data.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create project');
       setIsLoading(false);
-      return;
     }
-
-    navigate(`/projects/${data.id}`);
   };
 
   return (

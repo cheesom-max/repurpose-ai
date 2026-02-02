@@ -21,12 +21,40 @@ app.get('/api/health', (c) => c.json({ status: 'ok' }));
 app.post('/api/projects/:id/process', async (c) => {
   const id = c.req.param('id');
 
-  const supabase = createClient(
-    c.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-    c.env.SUPABASE_SERVICE_ROLE_KEY || c.env.SUPABASE_ANON_KEY || 'placeholder'
+  // Validate environment variables
+  if (!c.env.SUPABASE_URL || !c.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('Missing Supabase environment variables');
+    return c.json({ error: 'Server configuration error' }, 500);
+  }
+
+  // Extract and validate Authorization header
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return c.json({ error: 'Missing or invalid Authorization header' }, 401);
+  }
+
+  const token = authHeader.slice(7);
+
+  // Create Supabase client for auth verification
+  const supabaseAuth = createClient(
+    c.env.SUPABASE_URL,
+    c.env.SUPABASE_ANON_KEY || c.env.SUPABASE_SERVICE_ROLE_KEY
   );
 
-  // Get project
+  // Verify user token
+  const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+
+  if (authError || !user) {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+
+  // Create admin client for database operations
+  const supabase = createClient(
+    c.env.SUPABASE_URL,
+    c.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+
+  // Get project and verify ownership
   const { data: project, error: projectError } = await supabase
     .from('projects')
     .select('*')
@@ -35,6 +63,11 @@ app.post('/api/projects/:id/process', async (c) => {
 
   if (projectError || !project) {
     return c.json({ error: 'Project not found' }, 404);
+  }
+
+  // Verify project ownership
+  if (project.user_id !== user.id) {
+    return c.json({ error: 'Access denied: You do not own this project' }, 403);
   }
 
   // Update status to processing

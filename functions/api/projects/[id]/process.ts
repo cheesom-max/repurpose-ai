@@ -1,37 +1,70 @@
-import { createClient } from '@supabase/supabase-js';
+import { neon } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-http';
+import { eq, and } from 'drizzle-orm';
+import { projects, clips, contents } from '../../../../src/db/schema';
 
 interface Env {
-  SUPABASE_URL: string;
-  SUPABASE_SERVICE_ROLE_KEY: string;
+  DATABASE_URL: string;
 }
+
+// Helper to verify Clerk JWT
+async function verifyClerkToken(token: string): Promise<{ userId: string } | null> {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1]));
+    if (!payload.sub) return null;
+    return { userId: payload.sub };
+  } catch {
+    return null;
+  }
+}
+
+const jsonResponse = (data: object, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const { id } = context.params;
 
-  const supabase = createClient(
-    context.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-    context.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder'
-  );
+  // Validate environment variables
+  if (!context.env.DATABASE_URL) {
+    console.error('Missing DATABASE_URL environment variable');
+    return jsonResponse({ error: 'Server configuration error' }, 500);
+  }
 
-  // Get project
-  const { data: project, error: projectError } = await supabase
-    .from('projects')
-    .select('*')
-    .eq('id', id)
-    .single();
+  // Extract and validate Authorization header
+  const authHeader = context.request.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return jsonResponse({ error: 'Missing or invalid Authorization header' }, 401);
+  }
 
-  if (projectError || !project) {
-    return new Response(JSON.stringify({ error: 'Project not found' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  const token = authHeader.slice(7);
+  const auth = await verifyClerkToken(token);
+  if (!auth) {
+    return jsonResponse({ error: 'Invalid or expired token' }, 401);
+  }
+
+  const sql = neon(context.env.DATABASE_URL);
+  const db = drizzle(sql);
+
+  // Get project and verify ownership
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, id as string), eq(projects.userId, auth.userId)));
+
+  if (!project) {
+    return jsonResponse({ error: 'Project not found or access denied' }, 404);
   }
 
   // Update status to processing
-  await supabase
-    .from('projects')
-    .update({ status: 'processing', updated_at: new Date().toISOString() })
-    .eq('id', id);
+  await db
+    .update(projects)
+    .set({ status: 'processing', updatedAt: new Date() })
+    .where(eq(projects.id, id as string));
 
   try {
     // Mock transcript
@@ -56,67 +89,63 @@ Content repurposing is essential for modern content creators.`,
 
     // Mock highlights
     const mockHighlights = [
-      { start_time: 45, end_time: 90, title: 'Key Insight: 5-10 Pieces Per Video', score: 0.95 },
-      { start_time: 90, end_time: 150, title: 'Practical Tip: Timestamp Best Moments', score: 0.88 },
-      { start_time: 15, end_time: 45, title: 'Content Goldmine Concept', score: 0.82 },
+      { startTime: 45, endTime: 90, title: 'Key Insight: 5-10 Pieces Per Video', score: '0.95' },
+      { startTime: 90, endTime: 150, title: 'Practical Tip: Timestamp Best Moments', score: '0.88' },
+      { startTime: 15, endTime: 45, title: 'Content Goldmine Concept', score: '0.82' },
     ];
 
     // Update project
-    await supabase
-      .from('projects')
-      .update({
+    await db
+      .update(projects)
+      .set({
         transcript: mockTranscript,
         highlights: mockHighlights,
         duration: 180,
         status: 'completed',
-        updated_at: new Date().toISOString(),
+        updatedAt: new Date(),
       })
-      .eq('id', id);
+      .where(eq(projects.id, id as string));
 
     // Create clips
-    const clipsToInsert = mockHighlights.map((h) => ({
-      project_id: id,
-      title: h.title,
-      start_time: h.start_time,
-      end_time: h.end_time,
-      score: h.score,
-      status: 'completed',
-    }));
-    await supabase.from('clips').insert(clipsToInsert);
+    await db.insert(clips).values(
+      mockHighlights.map((h) => ({
+        projectId: id as string,
+        title: h.title,
+        startTime: h.startTime,
+        endTime: h.endTime,
+        score: h.score,
+        status: 'completed',
+      }))
+    );
 
     // Create content
-    const contentsToInsert = [
+    await db.insert(contents).values([
       {
-        project_id: id,
+        projectId: id as string,
         type: 'blog',
         title: 'Content Repurposing Guide',
         content: `# Content Repurposing Guide\n\n## Why Repurpose?\n\nOne video = 5-10 pieces of content.\n\n## Tips\n\n- Note timestamps of best moments\n- Extract key quotes\n- Create short clips`,
       },
       {
-        project_id: id,
+        projectId: id as string,
         type: 'twitter',
-        content: `🧵 One video = 10+ pieces of content\n\n1/ Long-form video = goldmine of content\n\n2/ The 5-10 Rule: Every video becomes 5-10 pieces\n\n3/ Pro tip: Note timestamps of best moments\n\n🔁 RT to help creators!`,
+        content: `One video = 10+ pieces of content\n\n1/ Long-form video = goldmine of content\n\n2/ The 5-10 Rule: Every video becomes 5-10 pieces\n\n3/ Pro tip: Note timestamps of best moments`,
       },
       {
-        project_id: id,
+        projectId: id as string,
         type: 'linkedin',
-        content: `I discovered something that changed my content strategy.\n\nOne 1-hour video = 10 pieces of content:\n• 5 clips\n• 1 blog\n• 1 thread\n• 3 posts\n\nThe secret? Content repurposing.\n\n#ContentMarketing`,
+        content: `I discovered something that changed my content strategy.\n\nOne 1-hour video = 10 pieces of content:\n- 5 clips\n- 1 blog\n- 1 thread\n- 3 posts\n\nThe secret? Content repurposing.\n\n#ContentMarketing`,
       },
-    ];
-    await supabase.from('contents').insert(contentsToInsert);
+    ]);
 
-    return new Response(JSON.stringify({ message: 'Processing completed', job_id: id }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ message: 'Processing completed', job_id: id });
   } catch (error) {
-    await supabase
-      .from('projects')
-      .update({ status: 'failed', updated_at: new Date().toISOString() })
-      .eq('id', id);
+    console.error('Processing error:', error);
+    await db
+      .update(projects)
+      .set({ status: 'failed', updatedAt: new Date() })
+      .where(eq(projects.id, id as string));
 
-    return new Response(JSON.stringify({ error: 'Processing failed' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ error: 'Processing failed' }, 500);
   }
 };

@@ -2,7 +2,10 @@ name = "repurpose-ai"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "./dist"
 
-[vars]
-# Add environment variables here or use wrangler secret
-# SUPABASE_URL = ""
-# SUPABASE_ANON_KEY = ""
+# Sensitive variables - use wrangler secret put <name>
+# Required secrets:
+#   wrangler pages secret put DATABASE_URL
+#
+# Optional secrets:
+#   wrangler pages secret put OPENAI_API_KEY
+#   wrangler pages secret put STRIPE_SECRET_KEY

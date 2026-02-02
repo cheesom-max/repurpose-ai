@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { projectsApi } from '../lib/api';
 import { Header } from '../components/layout/Header';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
@@ -8,19 +8,21 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 interface Project {
   id: string;
   title: string;
-  source_type: string;
-  source_url?: string;
+  sourceType: string;
+  sourceUrl?: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   transcript?: { text: string };
-  created_at: string;
+  createdAt: string;
+  clips?: Clip[];
+  contents?: Content[];
 }
 
 interface Clip {
   id: string;
   title: string;
-  start_time: number;
-  end_time: number;
-  score: number;
+  startTime: number;
+  endTime: number;
+  score: string;
 }
 
 interface Content {
@@ -33,48 +35,57 @@ interface Content {
 export default function ProjectDetail() {
   const { id } = useParams();
   const [project, setProject] = useState<Project | null>(null);
-  const [clips, setClips] = useState<Clip[]>([]);
-  const [contents, setContents] = useState<Content[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchProject();
+    if (id) fetchProject();
   }, [id]);
 
-  const fetchProject = async () => {
-    const { data: proj } = await supabase.from('projects').select('*').eq('id', id).single();
-    setProject(proj);
+  // Polling for processing status
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
-    if (proj?.status === 'completed') {
-      const [clipsRes, contentsRes] = await Promise.all([
-        supabase.from('clips').select('*').eq('project_id', id),
-        supabase.from('contents').select('*').eq('project_id', id),
-      ]);
-      setClips(clipsRes.data || []);
-      setContents(contentsRes.data || []);
+    if (processing && id) {
+      intervalId = setInterval(async () => {
+        try {
+          const data = await projectsApi.get(id);
+          if (data.status === 'completed' || data.status === 'failed') {
+            setProject(data);
+            setProcessing(false);
+          }
+        } catch {
+          // Ignore polling errors
+        }
+      }, 2000);
     }
 
-    setLoading(false);
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [processing, id]);
+
+  const fetchProject = async () => {
+    try {
+      const data = await projectsApi.get(id!);
+      setProject(data);
+    } catch (err) {
+      console.error('Failed to fetch project:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleProcess = async () => {
     setProcessing(true);
+    setError(null);
 
     try {
-      const response = await fetch(`/api/projects/${id}/process`, { method: 'POST' });
-      if (response.ok) {
-        // Poll for status updates
-        const interval = setInterval(async () => {
-          const { data } = await supabase.from('projects').select('status').eq('id', id).single();
-          if (data?.status === 'completed' || data?.status === 'failed') {
-            clearInterval(interval);
-            fetchProject();
-            setProcessing(false);
-          }
-        }, 2000);
-      }
-    } catch {
+      await projectsApi.process(id!);
+      // Polling will handle the rest
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
       setProcessing(false);
     }
   };
@@ -111,6 +122,9 @@ export default function ProjectDetail() {
     );
   }
 
+  const clips = project.clips || [];
+  const contents = project.contents || [];
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -127,19 +141,24 @@ export default function ProjectDetail() {
                 {project.status}
               </span>
               <span className="text-sm text-gray-500">
-                Created {new Date(project.created_at).toLocaleDateString()}
+                Created {new Date(project.createdAt).toLocaleDateString()}
               </span>
             </div>
           </div>
 
           {(project.status === 'pending' || project.status === 'failed') && (
             <Button onClick={handleProcess} isLoading={processing}>
-              🚀 Start Processing
+              Start Processing
             </Button>
           )}
         </div>
 
-        {/* Processing */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm mb-6">
+            {error}
+          </div>
+        )}
+
         {(project.status === 'processing' || processing) && (
           <Card className="mb-8">
             <CardContent className="py-8 text-center">
@@ -150,7 +169,6 @@ export default function ProjectDetail() {
           </Card>
         )}
 
-        {/* Pending */}
         {project.status === 'pending' && !processing && (
           <Card className="mb-8">
             <CardContent className="py-8 text-center">
@@ -161,10 +179,8 @@ export default function ProjectDetail() {
           </Card>
         )}
 
-        {/* Completed Results */}
         {project.status === 'completed' && (
           <div className="space-y-8">
-            {/* Clips */}
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-4">Generated Clips ({clips.length})</h2>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -175,17 +191,16 @@ export default function ProjectDetail() {
                     </CardHeader>
                     <CardContent>
                       <p className="text-sm text-gray-500">
-                        {Math.floor(clip.start_time / 60)}:{String(clip.start_time % 60).padStart(2, '0')} -
-                        {Math.floor(clip.end_time / 60)}:{String(clip.end_time % 60).padStart(2, '0')}
+                        {Math.floor(clip.startTime / 60)}:{String(clip.startTime % 60).padStart(2, '0')} -
+                        {Math.floor(clip.endTime / 60)}:{String(clip.endTime % 60).padStart(2, '0')}
                       </p>
-                      {clip.score && <p className="text-sm text-gray-500">Score: {(clip.score * 100).toFixed(0)}%</p>}
+                      {clip.score && <p className="text-sm text-gray-500">Score: {(parseFloat(clip.score) * 100).toFixed(0)}%</p>}
                     </CardContent>
                   </Card>
                 ))}
               </div>
             </div>
 
-            {/* Content */}
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-4">Generated Content ({contents.length})</h2>
               <div className="space-y-4">
@@ -204,7 +219,7 @@ export default function ProjectDetail() {
                         className="mt-4"
                         onClick={() => navigator.clipboard.writeText(content.content)}
                       >
-                        📋 Copy
+                        Copy
                       </Button>
                     </CardContent>
                   </Card>
@@ -212,7 +227,6 @@ export default function ProjectDetail() {
               </div>
             </div>
 
-            {/* Transcript */}
             {project.transcript && (
               <div>
                 <h2 className="text-xl font-bold text-gray-900 mb-4">Transcript</h2>

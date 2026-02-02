@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Header } from '../components/layout/Header';
 import { Footer } from '../components/layout/Footer';
 import { Button } from '../components/ui/Button';
@@ -32,6 +32,8 @@ const plans = [
 ];
 
 export default function Pricing() {
+  const navigate = useNavigate();
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -72,11 +74,13 @@ export default function Pricing() {
                       </li>
                     ))}
                   </ul>
-                  <Link to="/signup">
-                    <Button className="w-full" variant={plan.popular ? 'primary' : 'outline'}>
-                      {plan.cta}
-                    </Button>
-                  </Link>
+                  <Button
+                    className="w-full"
+                    variant={plan.popular ? 'primary' : 'outline'}
+                    onClick={() => navigate('/signup')}
+                  >
+                    {plan.cta}
+                  </Button>
                 </CardContent>
               </Card>
             ))}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../lib/auth';
-import { supabase } from '../lib/supabase';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '@clerk/clerk-react';
+import { projectsApi } from '../lib/api';
 import { Header } from '../components/layout/Header';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
@@ -9,32 +9,33 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 interface Project {
   id: string;
   title: string;
-  source_type: string;
+  sourceType: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
-  created_at: string;
+  createdAt: string;
   duration?: number;
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { isSignedIn } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
+    if (isSignedIn) {
       fetchProjects();
     }
-  }, [user]);
+  }, [isSignedIn]);
 
   const fetchProjects = async () => {
-    const { data } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('user_id', user?.id)
-      .order('created_at', { ascending: false });
-
-    setProjects(data || []);
-    setLoading(false);
+    try {
+      const data = await projectsApi.list();
+      setProjects(data || []);
+    } catch (error) {
+      console.error('Failed to fetch projects:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const statusColors = {
@@ -54,14 +55,12 @@ export default function Dashboard() {
             <h1 className="text-2xl font-bold text-gray-900">My Projects</h1>
             <p className="text-gray-500 mt-1">Transform your videos into multiple content formats</p>
           </div>
-          <Link to="/projects/new">
-            <Button>
-              <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Project
-            </Button>
-          </Link>
+          <Button onClick={() => navigate('/projects/new')}>
+            <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Project
+          </Button>
         </div>
 
         {loading ? (
@@ -74,9 +73,7 @@ export default function Dashboard() {
               <div className="text-4xl mb-4">🎬</div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
               <p className="text-gray-500 mb-6">Get started by creating your first project</p>
-              <Link to="/projects/new">
-                <Button>Create Your First Project</Button>
-              </Link>
+              <Button onClick={() => navigate('/projects/new')}>Create Your First Project</Button>
             </CardContent>
           </Card>
         ) : (
@@ -95,10 +92,10 @@ export default function Dashboard() {
                   <CardContent>
                     <div className="space-y-2 text-sm text-gray-500">
                       <div className="flex items-center">
-                        <span>{project.source_type === 'youtube' ? '📺 YouTube' : '📁 Upload'}</span>
+                        <span>{project.sourceType === 'youtube' ? '📺 YouTube' : '📁 Upload'}</span>
                       </div>
                       <div className="flex items-center">
-                        <span>📅 {new Date(project.created_at).toLocaleDateString()}</span>
+                        <span>📅 {new Date(project.createdAt).toLocaleDateString()}</span>
                       </div>
                     </div>
                   </CardContent>

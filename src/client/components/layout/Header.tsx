@@ -1,10 +1,9 @@
-import { Link } from 'react-router-dom';
-import { useAuth } from '../../lib/auth';
+import { Link, useNavigate } from 'react-router-dom';
+import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react';
 import { Button } from '../ui/Button';
 
 export function Header() {
-  const { user, signOut } = useAuth();
-
+  const navigate = useNavigate();
   return (
     <header className="border-b border-gray-200 bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -29,25 +28,14 @@ export function Header() {
           </nav>
 
           <div className="flex items-center space-x-4">
-            {user ? (
-              <>
-                <Link to="/dashboard">
-                  <Button variant="ghost">Dashboard</Button>
-                </Link>
-                <Button variant="outline" onClick={signOut}>
-                  Sign Out
-                </Button>
-              </>
-            ) : (
-              <>
-                <Link to="/login">
-                  <Button variant="ghost">Sign In</Button>
-                </Link>
-                <Link to="/signup">
-                  <Button>Get Started</Button>
-                </Link>
-              </>
-            )}
+            <SignedIn>
+              <Button variant="ghost" onClick={() => navigate('/dashboard')}>Dashboard</Button>
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
+            <SignedOut>
+              <Button variant="ghost" onClick={() => navigate('/login')}>Sign In</Button>
+              <Button onClick={() => navigate('/signup')}>Get Started</Button>
+            </SignedOut>
           </div>
         </div>
       </div>
